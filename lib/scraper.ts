@@ -118,39 +118,11 @@ async function scrapeThreads(url: string): Promise<ScrapedContent> {
 async function scrapeInstagram(url: string): Promise<ScrapedContent> {
   const cleanUrl = url.split("?")[0].replace(/\/$/, "");
 
-  // 1단계: 공식 Instagram oEmbed (무료, 인증 불필요 — 공개 게시물에 작동)
-  try {
-    const oRes = await fetch(
-      `https://api.instagram.com/oembed/?url=${encodeURIComponent(cleanUrl)}&format=json`
-    );
-    console.log(`[Instagram] official oEmbed status: ${oRes.status}`);
-    if (oRes.ok) {
-      const oData = await oRes.json();
-      const author = oData.author_name || "";
-      let caption = "";
-      if (oData.html) {
-        const $ = cheerio.load(oData.html);
-        caption = $("p").first().text().trim() || $("blockquote").text().trim();
-      }
-      console.log(`[Instagram] oEmbed caption: ${caption.slice(0, 100)}`);
-      if (caption) {
-        return {
-          title: `@${author}의 인스타그램 게시물`,
-          description: caption.slice(0, 200),
-          bodyText: `인스타그램 게시물. 작성자: @${author}. 내용: ${caption}`,
-          success: true,
-          platform: "instagram",
-        };
-      }
-    }
-  } catch (e) {
-    console.error(`[Instagram] official oEmbed error:`, e);
-  }
-
-  // 2단계: RapidAPI (유료 플랜)
   const rapidApiKey = process.env.RAPIDAPI_KEY;
-  console.log(`[Instagram] RapidAPI key present: ${!!rapidApiKey}`);
+  console.log(`[Instagram] RAPIDAPI_KEY set: ${!!rapidApiKey}, cleanUrl: ${cleanUrl}`);
+
   if (!rapidApiKey) {
+    console.error("[Instagram] RAPIDAPI_KEY missing in environment");
     return { title: "", description: "", bodyText: "", success: false, platform: "instagram" };
   }
 
@@ -165,16 +137,23 @@ async function scrapeInstagram(url: string): Promise<ScrapedContent> {
       }
     );
     console.log(`[Instagram] RapidAPI status: ${res.status}`);
-    if (!res.ok) return { title: "", description: "", bodyText: "", success: false, platform: "instagram" };
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      console.error(`[Instagram] RapidAPI failed: ${res.status} ${errText.slice(0, 200)}`);
+      return { title: "", description: "", bodyText: "", success: false, platform: "instagram" };
+    }
 
     const data = await res.json();
+    console.log(`[Instagram] RapidAPI raw keys: ${Object.keys(data || {}).join(", ")}`);
+
     const post = data?.data?.items?.[0];
     const caption = post?.caption?.text ?? "";
     const username = post?.user?.username ?? post?.owner?.username ?? "";
     const isReel = post?.media_type === 2 || post?.product_type === "clips";
     const mediaLabel = isReel ? "릴스" : "게시물";
 
-    console.log(`[Instagram] RapidAPI username: ${username}, caption: ${caption.slice(0, 100)}`);
+    console.log(`[Instagram] username: ${username}, caption length: ${caption.length}`);
 
     return {
       title: `@${username}의 인스타그램 ${mediaLabel}`,
@@ -184,7 +163,7 @@ async function scrapeInstagram(url: string): Promise<ScrapedContent> {
       platform: "instagram",
     };
   } catch (e) {
-    console.error(`[Instagram] RapidAPI error:`, e);
+    console.error(`[Instagram] RapidAPI exception:`, e);
     return { title: "", description: "", bodyText: "", success: false, platform: "instagram" };
   }
 }
