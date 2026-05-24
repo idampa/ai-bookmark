@@ -70,6 +70,7 @@ export default function AddBookmarkModal({
           summary: analysis.summary,
           tags: analysis.tags,
           raw_content: analysis.raw_content || "",
+          thumbnail_url: analysis.thumbnail_url || null,
         }),
       });
       if (!saveRes.ok) throw new Error("저장 실패");

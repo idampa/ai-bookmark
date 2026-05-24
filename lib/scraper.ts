@@ -6,6 +6,7 @@ export interface ScrapedContent {
   bodyText: string;
   success: boolean;
   platform?: string;
+  thumbnailUrl?: string;
 }
 
 type Platform = "youtube" | "instagram" | "threads" | "web";
@@ -18,6 +19,20 @@ function detectPlatform(url: string): Platform {
   return "web";
 }
 
+function extractYoutubeId(url: string): string {
+  const patterns = [
+    /[?&]v=([^&#]+)/,
+    /youtu\.be\/([^?&#]+)/,
+    /youtube\.com\/embed\/([^?&#]+)/,
+    /youtube\.com\/shorts\/([^?&#]+)/,
+  ];
+  for (const p of patterns) {
+    const m = url.match(p);
+    if (m) return m[1];
+  }
+  return "";
+}
+
 async function scrapeYoutube(url: string): Promise<ScrapedContent> {
   try {
     const res = await fetch(
@@ -28,6 +43,10 @@ async function scrapeYoutube(url: string): Promise<ScrapedContent> {
     const data = await res.json();
     const title = data.title || "";
     const author = data.author_name || "";
+    const videoId = extractYoutubeId(url);
+    const thumbnailUrl = videoId
+      ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`
+      : (data.thumbnail_url || "");
 
     return {
       title,
@@ -35,6 +54,7 @@ async function scrapeYoutube(url: string): Promise<ScrapedContent> {
       bodyText: `유튜브 영상 제목: ${title}. 채널명: ${author}.`,
       success: true,
       platform: "youtube",
+      thumbnailUrl,
     };
   } catch {
     return { title: "", description: "", bodyText: "", success: false, platform: "youtube" };

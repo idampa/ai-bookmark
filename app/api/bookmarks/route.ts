@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { url, title, summary, tags, raw_content } = body;
+  const { url, title, summary, tags, raw_content, thumbnail_url } = body;
 
   if (!url) {
     return NextResponse.json({ error: "URL is required" }, { status: 400 });
@@ -52,6 +52,7 @@ export async function POST(request: NextRequest) {
       summary: summary || "",
       tags: tags || [],
       raw_content: raw_content || "",
+      thumbnail_url: thumbnail_url || null,
     })
     .select()
     .single();

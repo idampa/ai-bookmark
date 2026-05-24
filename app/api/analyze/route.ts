@@ -46,5 +46,6 @@ export async function POST(request: NextRequest) {
     ...analysis,
     raw_content: scraped.bodyText,
     scraped: scraped.success,
+    thumbnail_url: scraped.thumbnailUrl || null,
   });
 }
