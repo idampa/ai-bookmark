@@ -48,8 +48,10 @@ async function scrapeThreads(url: string): Promise<ScrapedContent> {
     const res = await fetch(
       `https://www.threads.net/oembed/?url=${encodeURIComponent(url)}`
     );
+    console.log(`[Threads] oEmbed status: ${res.status} for ${url}`);
     if (res.ok) {
       const data = await res.json();
+      console.log(`[Threads] oEmbed raw:`, JSON.stringify(data).slice(0, 600));
       author = data.author_name || "";
 
       let content = "";
@@ -64,6 +66,7 @@ async function scrapeThreads(url: string): Promise<ScrapedContent> {
       if (!content && data.title && data.title !== "Threads") {
         content = data.title;
       }
+      console.log(`[Threads] extracted content: ${content.slice(0, 100)}`);
       if (content && content.length > 5) {
         return {
           title: content.slice(0, 60),
@@ -74,7 +77,9 @@ async function scrapeThreads(url: string): Promise<ScrapedContent> {
         };
       }
     }
-  } catch {}
+  } catch (e) {
+    console.error(`[Threads] oEmbed error:`, e);
+  }
 
   // 2단계: 직접 페이지 OG 메타태그 스크래핑
   try {
@@ -111,15 +116,45 @@ async function scrapeThreads(url: string): Promise<ScrapedContent> {
 }
 
 async function scrapeInstagram(url: string): Promise<ScrapedContent> {
+  const cleanUrl = url.split("?")[0].replace(/\/$/, "");
+
+  // 1단계: 공식 Instagram oEmbed (무료, 인증 불필요 — 공개 게시물에 작동)
+  try {
+    const oRes = await fetch(
+      `https://api.instagram.com/oembed/?url=${encodeURIComponent(cleanUrl)}&format=json`
+    );
+    console.log(`[Instagram] official oEmbed status: ${oRes.status}`);
+    if (oRes.ok) {
+      const oData = await oRes.json();
+      const author = oData.author_name || "";
+      let caption = "";
+      if (oData.html) {
+        const $ = cheerio.load(oData.html);
+        caption = $("p").first().text().trim() || $("blockquote").text().trim();
+      }
+      console.log(`[Instagram] oEmbed caption: ${caption.slice(0, 100)}`);
+      if (caption) {
+        return {
+          title: `@${author}의 인스타그램 게시물`,
+          description: caption.slice(0, 200),
+          bodyText: `인스타그램 게시물. 작성자: @${author}. 내용: ${caption}`,
+          success: true,
+          platform: "instagram",
+        };
+      }
+    }
+  } catch (e) {
+    console.error(`[Instagram] official oEmbed error:`, e);
+  }
+
+  // 2단계: RapidAPI (유료 플랜)
   const rapidApiKey = process.env.RAPIDAPI_KEY;
+  console.log(`[Instagram] RapidAPI key present: ${!!rapidApiKey}`);
   if (!rapidApiKey) {
     return { title: "", description: "", bodyText: "", success: false, platform: "instagram" };
   }
 
   try {
-    // 캐러셀 특정 이미지 URL(img_index=N)은 쿼리스트링 제거하고 게시물 루트 URL만 사용
-    const cleanUrl = url.split("?")[0].replace(/\/$/, "");
-
     const res = await fetch(
       `https://instagram-scraper-20251.p.rapidapi.com/postdetail/?code_or_url=${encodeURIComponent(cleanUrl)}`,
       {
@@ -129,6 +164,7 @@ async function scrapeInstagram(url: string): Promise<ScrapedContent> {
         },
       }
     );
+    console.log(`[Instagram] RapidAPI status: ${res.status}`);
     if (!res.ok) return { title: "", description: "", bodyText: "", success: false, platform: "instagram" };
 
     const data = await res.json();
@@ -138,14 +174,17 @@ async function scrapeInstagram(url: string): Promise<ScrapedContent> {
     const isReel = post?.media_type === 2 || post?.product_type === "clips";
     const mediaLabel = isReel ? "릴스" : "게시물";
 
+    console.log(`[Instagram] RapidAPI username: ${username}, caption: ${caption.slice(0, 100)}`);
+
     return {
       title: `@${username}의 인스타그램 ${mediaLabel}`,
       description: caption.slice(0, 200),
       bodyText: `인스타그램 ${mediaLabel}. 작성자: @${username}. 내용: ${caption}`,
-      success: true,
+      success: !!username,
       platform: "instagram",
     };
-  } catch {
+  } catch (e) {
+    console.error(`[Instagram] RapidAPI error:`, e);
     return { title: "", description: "", bodyText: "", success: false, platform: "instagram" };
   }
 }
