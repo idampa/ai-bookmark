@@ -42,36 +42,72 @@ async function scrapeYoutube(url: string): Promise<ScrapedContent> {
 }
 
 async function scrapeThreads(url: string): Promise<ScrapedContent> {
+  // 1단계: oEmbed로 작성자와 HTML 임베드 내용 추출
+  let author = "";
   try {
     const res = await fetch(
       `https://www.threads.net/oembed/?url=${encodeURIComponent(url)}`
     );
-    if (!res.ok) return { title: "", description: "", bodyText: "", success: false, platform: "threads" };
+    if (res.ok) {
+      const data = await res.json();
+      author = data.author_name || "";
 
-    const data = await res.json();
-    const author = data.author_name || "";
-
-    // oEmbed의 title은 "Threads"라는 플랫폼명만 오는 경우가 많음.
-    // 실제 게시글 내용은 html 필드 안의 blockquote에 있음.
-    let content = "";
-    if (data.html) {
-      const $ = cheerio.load(data.html);
-      content = $("p").first().text().trim() || $("blockquote").text().trim();
+      let content = "";
+      if (data.html) {
+        const $ = cheerio.load(data.html);
+        content =
+          $("p[dir]").first().text().trim() ||
+          $("p").first().text().trim() ||
+          $("blockquote a p").first().text().trim() ||
+          $("blockquote").clone().children("script").remove().end().text().trim().split("\n")[0].trim();
+      }
+      if (!content && data.title && data.title !== "Threads") {
+        content = data.title;
+      }
+      if (content && content.length > 5) {
+        return {
+          title: content.slice(0, 60),
+          description: content,
+          bodyText: `Threads 게시물 작성자: @${author}. 내용: ${content}`,
+          success: true,
+          platform: "threads",
+        };
+      }
     }
-    if (!content && data.title && data.title !== "Threads") {
-      content = data.title;
-    }
+  } catch {}
 
-    return {
-      title: content ? content.slice(0, 60) : `@${author}의 Threads 게시물`,
-      description: content,
-      bodyText: `Threads 게시물 작성자: @${author}. 내용: ${content}`,
-      success: !!content,
-      platform: "threads",
-    };
-  } catch {
-    return { title: "", description: "", bodyText: "", success: false, platform: "threads" };
-  }
+  // 2단계: 직접 페이지 OG 메타태그 스크래핑
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8",
+      },
+    });
+    clearTimeout(timeout);
+    if (res.ok) {
+      const html = await res.text();
+      const $ = cheerio.load(html);
+      const ogDescription = $('meta[property="og:description"]').attr("content") || "";
+      const ogTitle = $('meta[property="og:title"]').attr("content") || "";
+      if (ogDescription) {
+        return {
+          title: ogDescription.slice(0, 60),
+          description: ogDescription,
+          bodyText: `Threads 게시물 작성자: @${author}. 제목: ${ogTitle}. 내용: ${ogDescription}`,
+          success: true,
+          platform: "threads",
+        };
+      }
+    }
+  } catch {}
+
+  return { title: "", description: "", bodyText: "", success: false, platform: "threads" };
 }
 
 async function scrapeInstagram(url: string): Promise<ScrapedContent> {
