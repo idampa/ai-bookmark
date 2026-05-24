@@ -72,21 +72,21 @@ async function scrapeInstagram(url: string): Promise<ScrapedContent> {
 
   try {
     const res = await fetch(
-      `https://instagram-scraper-api2.p.rapidapi.com/v1/post_info?code_or_id_or_url=${encodeURIComponent(url)}`,
+      `https://instagram-scraper-20251.p.rapidapi.com/postdetail/?code_or_url=${encodeURIComponent(url)}`,
       {
         headers: {
           "x-rapidapi-key": rapidApiKey,
-          "x-rapidapi-host": "instagram-scraper-api2.p.rapidapi.com",
+          "x-rapidapi-host": "instagram-scraper-20251.p.rapidapi.com",
         },
       }
     );
     if (!res.ok) return { title: "", description: "", bodyText: "", success: false, platform: "instagram" };
 
     const data = await res.json();
-    const post = data?.data;
-    const caption = post?.caption?.text || "";
-    const username = post?.user?.username || "";
-    const isReel = post?.media_type === 2;
+    const post = data?.data ?? data;
+    const caption = post?.caption ?? post?.caption_text ?? post?.edge_media_to_caption?.edges?.[0]?.node?.text ?? "";
+    const username = post?.username ?? post?.owner?.username ?? "";
+    const isReel = post?.is_video === true || post?.product_type === "clips";
     const mediaLabel = isReel ? "릴스" : "게시물";
 
     return {
