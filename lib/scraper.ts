@@ -146,20 +146,41 @@ async function scrapeInstagram(url: string): Promise<ScrapedContent> {
 
     const data = await res.json();
     console.log(`[Instagram] RapidAPI raw keys: ${Object.keys(data || {}).join(", ")}`);
+    console.log(`[Instagram] data.data keys: ${Object.keys(data?.data || {}).join(", ")}`);
 
-    const post = data?.data?.items?.[0];
-    const caption = post?.caption?.text ?? "";
-    const username = post?.user?.username ?? post?.owner?.username ?? "";
-    const isReel = post?.media_type === 2 || post?.product_type === "clips";
+    // 응답 구조가 다를 수 있어 여러 경로 시도
+    const post = data?.data?.items?.[0] ?? data?.data ?? data?.items?.[0];
+    console.log(`[Instagram] post keys: ${Object.keys(post || {}).join(", ")}`);
+
+    const caption =
+      post?.caption?.text ??
+      post?.edge_media_to_caption?.edges?.[0]?.node?.text ??
+      post?.accessibility_caption ??
+      "";
+    const username =
+      post?.user?.username ??
+      post?.owner?.username ??
+      post?.owner?.login ??
+      "";
+    const isReel =
+      post?.media_type === 2 ||
+      post?.product_type === "clips" ||
+      post?.is_video === true;
     const mediaLabel = isReel ? "릴스" : "게시물";
 
-    console.log(`[Instagram] username: ${username}, caption length: ${caption.length}`);
+    console.log(`[Instagram] username: "${username}", caption length: ${caption.length}`);
 
+    if (!username && !caption) {
+      console.error("[Instagram] both username and caption empty — parse failed");
+      return { title: "", description: "", bodyText: "", success: false, platform: "instagram" };
+    }
+
+    const displayName = username ? `@${username}` : "인스타그램";
     return {
-      title: `@${username}의 인스타그램 ${mediaLabel}`,
+      title: `${displayName}의 인스타그램 ${mediaLabel}`,
       description: caption.slice(0, 200),
-      bodyText: `인스타그램 ${mediaLabel}. 작성자: @${username}. 내용: ${caption}`,
-      success: !!username,
+      bodyText: `인스타그램 ${mediaLabel}. 작성자: ${displayName}. 내용: ${caption}`,
+      success: true,
       platform: "instagram",
     };
   } catch (e) {
