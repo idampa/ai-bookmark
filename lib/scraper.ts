@@ -5,9 +5,103 @@ export interface ScrapedContent {
   description: string;
   bodyText: string;
   success: boolean;
+  platform?: string;
 }
 
-export async function scrapeUrl(url: string): Promise<ScrapedContent> {
+type Platform = "youtube" | "instagram" | "threads" | "web";
+
+function detectPlatform(url: string): Platform {
+  const hostname = new URL(url).hostname.replace("www.", "");
+  if (hostname === "youtube.com" || hostname === "youtu.be" || hostname === "m.youtube.com") return "youtube";
+  if (hostname === "instagram.com") return "instagram";
+  if (hostname === "threads.net") return "threads";
+  return "web";
+}
+
+async function scrapeYoutube(url: string): Promise<ScrapedContent> {
+  try {
+    const res = await fetch(
+      `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`
+    );
+    if (!res.ok) return { title: "", description: "", bodyText: "", success: false, platform: "youtube" };
+
+    const data = await res.json();
+    const title = data.title || "";
+    const author = data.author_name || "";
+
+    return {
+      title,
+      description: `${author}의 유튜브 영상`,
+      bodyText: `유튜브 영상 제목: ${title}. 채널명: ${author}.`,
+      success: true,
+      platform: "youtube",
+    };
+  } catch {
+    return { title: "", description: "", bodyText: "", success: false, platform: "youtube" };
+  }
+}
+
+async function scrapeThreads(url: string): Promise<ScrapedContent> {
+  try {
+    const res = await fetch(
+      `https://www.threads.net/oembed/?url=${encodeURIComponent(url)}`
+    );
+    if (!res.ok) return { title: "", description: "", bodyText: "", success: false, platform: "threads" };
+
+    const data = await res.json();
+    const content = data.title || "";
+    const author = data.author_name || "";
+
+    return {
+      title: content ? content.slice(0, 60) : `@${author}의 Threads 게시물`,
+      description: content,
+      bodyText: `Threads 게시물 작성자: @${author}. 내용: ${content}`,
+      success: true,
+      platform: "threads",
+    };
+  } catch {
+    return { title: "", description: "", bodyText: "", success: false, platform: "threads" };
+  }
+}
+
+async function scrapeInstagram(url: string): Promise<ScrapedContent> {
+  const rapidApiKey = process.env.RAPIDAPI_KEY;
+  if (!rapidApiKey) {
+    return { title: "", description: "", bodyText: "", success: false, platform: "instagram" };
+  }
+
+  try {
+    const res = await fetch(
+      `https://instagram-scraper-api2.p.rapidapi.com/v1/post_info?code_or_id_or_url=${encodeURIComponent(url)}`,
+      {
+        headers: {
+          "x-rapidapi-key": rapidApiKey,
+          "x-rapidapi-host": "instagram-scraper-api2.p.rapidapi.com",
+        },
+      }
+    );
+    if (!res.ok) return { title: "", description: "", bodyText: "", success: false, platform: "instagram" };
+
+    const data = await res.json();
+    const post = data?.data;
+    const caption = post?.caption?.text || "";
+    const username = post?.user?.username || "";
+    const isReel = post?.media_type === 2;
+    const mediaLabel = isReel ? "릴스" : "게시물";
+
+    return {
+      title: `@${username}의 인스타그램 ${mediaLabel}`,
+      description: caption.slice(0, 200),
+      bodyText: `인스타그램 ${mediaLabel}. 작성자: @${username}. 내용: ${caption}`,
+      success: true,
+      platform: "instagram",
+    };
+  } catch {
+    return { title: "", description: "", bodyText: "", success: false, platform: "instagram" };
+  }
+}
+
+async function scrapeWeb(url: string): Promise<ScrapedContent> {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
@@ -55,5 +149,16 @@ export async function scrapeUrl(url: string): Promise<ScrapedContent> {
     return { title, description, bodyText, success: true };
   } catch {
     return { title: "", description: "", bodyText: "", success: false };
+  }
+}
+
+export async function scrapeUrl(url: string): Promise<ScrapedContent> {
+  const platform = detectPlatform(url);
+
+  switch (platform) {
+    case "youtube":   return scrapeYoutube(url);
+    case "instagram": return scrapeInstagram(url);
+    case "threads":   return scrapeThreads(url);
+    default:          return scrapeWeb(url);
   }
 }
