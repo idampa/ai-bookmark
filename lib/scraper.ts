@@ -14,7 +14,7 @@ function detectPlatform(url: string): Platform {
   const hostname = new URL(url).hostname.replace("www.", "");
   if (hostname === "youtube.com" || hostname === "youtu.be" || hostname === "m.youtube.com") return "youtube";
   if (hostname === "instagram.com") return "instagram";
-  if (hostname === "threads.net") return "threads";
+  if (hostname === "threads.net" || hostname === "threads.com") return "threads";
   return "web";
 }
 
@@ -83,10 +83,10 @@ async function scrapeInstagram(url: string): Promise<ScrapedContent> {
     if (!res.ok) return { title: "", description: "", bodyText: "", success: false, platform: "instagram" };
 
     const data = await res.json();
-    const post = data?.data ?? data;
-    const caption = post?.caption ?? post?.caption_text ?? post?.edge_media_to_caption?.edges?.[0]?.node?.text ?? "";
-    const username = post?.username ?? post?.owner?.username ?? "";
-    const isReel = post?.is_video === true || post?.product_type === "clips";
+    const post = data?.data?.items?.[0];
+    const caption = post?.caption?.text ?? "";
+    const username = post?.user?.username ?? post?.owner?.username ?? "";
+    const isReel = post?.media_type === 2 || post?.product_type === "clips";
     const mediaLabel = isReel ? "릴스" : "게시물";
 
     return {
