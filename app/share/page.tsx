@@ -19,6 +19,13 @@ function ShareHandler() {
     const url = urlMatch ? urlMatch[0] : rawUrl;
 
     async function save() {
+      // 로그인 상태 확인 (미로그인 시 로그인 후 다시 share URL로 복귀)
+      const meRes = await fetch("/api/bookmarks");
+      if (meRes.status === 401) {
+        router.replace(`/auth/login?next=/share?url=${encodeURIComponent(url)}`);
+        return;
+      }
+
       try {
         const analyzeRes = await fetch("/api/analyze", {
           method: "POST",
