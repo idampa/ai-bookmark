@@ -49,14 +49,24 @@ async function scrapeThreads(url: string): Promise<ScrapedContent> {
     if (!res.ok) return { title: "", description: "", bodyText: "", success: false, platform: "threads" };
 
     const data = await res.json();
-    const content = data.title || "";
     const author = data.author_name || "";
+
+    // oEmbed의 title은 "Threads"라는 플랫폼명만 오는 경우가 많음.
+    // 실제 게시글 내용은 html 필드 안의 blockquote에 있음.
+    let content = "";
+    if (data.html) {
+      const $ = cheerio.load(data.html);
+      content = $("p").first().text().trim() || $("blockquote").text().trim();
+    }
+    if (!content && data.title && data.title !== "Threads") {
+      content = data.title;
+    }
 
     return {
       title: content ? content.slice(0, 60) : `@${author}의 Threads 게시물`,
       description: content,
       bodyText: `Threads 게시물 작성자: @${author}. 내용: ${content}`,
-      success: true,
+      success: !!content,
       platform: "threads",
     };
   } catch {
@@ -71,8 +81,11 @@ async function scrapeInstagram(url: string): Promise<ScrapedContent> {
   }
 
   try {
+    // 캐러셀 특정 이미지 URL(img_index=N)은 쿼리스트링 제거하고 게시물 루트 URL만 사용
+    const cleanUrl = url.split("?")[0].replace(/\/$/, "");
+
     const res = await fetch(
-      `https://instagram-scraper-20251.p.rapidapi.com/postdetail/?code_or_url=${encodeURIComponent(url)}`,
+      `https://instagram-scraper-20251.p.rapidapi.com/postdetail/?code_or_url=${encodeURIComponent(cleanUrl)}`,
       {
         headers: {
           "x-rapidapi-key": rapidApiKey,
