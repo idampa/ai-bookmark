@@ -42,75 +42,82 @@ async function scrapeYoutube(url: string): Promise<ScrapedContent> {
 }
 
 async function scrapeThreads(url: string): Promise<ScrapedContent> {
-  // 1단계: oEmbed로 작성자와 HTML 임베드 내용 추출
   let author = "";
-  try {
-    const res = await fetch(
-      `https://www.threads.net/oembed/?url=${encodeURIComponent(url)}`
-    );
-    console.log(`[Threads] oEmbed status: ${res.status} for ${url}`);
-    if (res.ok) {
-      const data = await res.json();
-      console.log(`[Threads] oEmbed raw:`, JSON.stringify(data).slice(0, 600));
-      author = data.author_name || "";
 
-      let content = "";
-      if (data.html) {
-        const $ = cheerio.load(data.html);
-        content =
-          $("p[dir]").first().text().trim() ||
-          $("p").first().text().trim() ||
-          $("blockquote a p").first().text().trim() ||
-          $("blockquote").clone().children("script").remove().end().text().trim().split("\n")[0].trim();
+  // 1단계: oEmbed (format=json 명시)
+  try {
+    const oembedUrl = `https://www.threads.net/oembed/?url=${encodeURIComponent(url)}&format=json`;
+    const res = await fetch(oembedUrl);
+    console.log(`[Threads] oEmbed status: ${res.status}`);
+
+    if (res.ok) {
+      const text = await res.text();
+      let data: Record<string, unknown> | null = null;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        console.log(`[Threads] oEmbed non-JSON body: ${text.slice(0, 120)}`);
       }
-      if (!content && data.title && data.title !== "Threads") {
-        content = data.title;
-      }
-      console.log(`[Threads] extracted content: ${content.slice(0, 100)}`);
-      if (content && content.length > 5) {
-        return {
-          title: content.slice(0, 60),
-          description: content,
-          bodyText: `Threads 게시물 작성자: @${author}. 내용: ${content}`,
-          success: true,
-          platform: "threads",
-        };
+
+      if (data) {
+        author = String(data.author_name || "");
+        let content = "";
+        if (data.html) {
+          const $ = cheerio.load(String(data.html));
+          content =
+            $("p[dir]").first().text().trim() ||
+            $("p").first().text().trim() ||
+            $("blockquote").clone().children("script").remove().end().text().trim().split("\n")[0].trim();
+        }
+        if (!content && data.title && data.title !== "Threads") content = String(data.title);
+        console.log(`[Threads] oEmbed author: ${author}, content: ${content.slice(0, 100)}`);
+        if (content && content.length > 5) {
+          return {
+            title: content.slice(0, 60),
+            description: content,
+            bodyText: `Threads 게시물 작성자: @${author}. 내용: ${content}`,
+            success: true,
+            platform: "threads",
+          };
+        }
       }
     }
   } catch (e) {
-    console.error(`[Threads] oEmbed error:`, e);
+    console.error("[Threads] oEmbed error:", e);
   }
 
-  // 2단계: 직접 페이지 OG 메타태그 스크래핑
+  // 2단계: 직접 페이지 OG 스크래핑 (facebookexternalhit UA — Threads가 Meta 서비스라 허용)
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
     const res = await fetch(url, {
       signal: controller.signal,
       headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "User-Agent": "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)",
         Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8",
       },
     });
     clearTimeout(timeout);
+    console.log(`[Threads] direct fetch status: ${res.status}`);
     if (res.ok) {
       const html = await res.text();
       const $ = cheerio.load(html);
       const ogDescription = $('meta[property="og:description"]').attr("content") || "";
       const ogTitle = $('meta[property="og:title"]').attr("content") || "";
+      console.log(`[Threads] OG desc: ${ogDescription.slice(0, 100)}`);
       if (ogDescription) {
         return {
           title: ogDescription.slice(0, 60),
           description: ogDescription,
-          bodyText: `Threads 게시물 작성자: @${author}. 제목: ${ogTitle}. 내용: ${ogDescription}`,
+          bodyText: `Threads 게시물. 작성자: @${author}. 제목: ${ogTitle}. 내용: ${ogDescription}`,
           success: true,
           platform: "threads",
         };
       }
     }
-  } catch {}
+  } catch (e) {
+    console.error("[Threads] direct fetch error:", e);
+  }
 
   return { title: "", description: "", bodyText: "", success: false, platform: "threads" };
 }
